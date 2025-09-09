@@ -35,6 +35,8 @@
                 adrs
                 typos
 
+                lldb
+
                 # If the dependencies need system libs, you usually need pkg-config + the lib
                 pkg-config
                 openssl

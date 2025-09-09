@@ -14,3 +14,8 @@ target
 **/mutants.out*/
 
 .direnv
+
+
+# Added by cargo
+
+/target
