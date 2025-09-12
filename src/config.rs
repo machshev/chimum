@@ -81,7 +81,7 @@ mod tests {
             port: 8080,
             username: "testuser".to_string(),
             password: "testpass".to_string(),
-            max_packet_size: "testpass".to_string(),
+            max_packet_size: 52342,
         };
 
         // Test saving
