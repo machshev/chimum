@@ -1,9 +1,11 @@
 /// Server
-use super::config::Config;
+use crate::config::Config;
+use crate::house::HouseController;
+use log::{debug, info};
 use rumqttc::v5::{AsyncClient, Event, Incoming, MqttOptions, mqttbytes::QoS};
+use serde_json::Value;
 use std::error::Error;
 use std::time::Duration;
-use tokio::{task, time};
 
 pub async fn start_server() -> Result<(), Box<dyn Error>> {
     let config = Config::load()?;
@@ -15,10 +17,22 @@ pub async fn start_server() -> Result<(), Box<dyn Error>> {
 
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
 
-    task::spawn(async move {
-        requests(client).await;
-        time::sleep(Duration::from_secs(3)).await;
-    });
+    client
+        .subscribe("zigbee2mqtt/#", QoS::AtMostOnce)
+        .await
+        .unwrap();
+
+    // client
+    //     .publish(
+    //         "zigbee2mqtt/FRIENDLY_NAME/set/state",
+    //         QoS::AtLeastOnce,
+    //         true,
+    //         "ON".as_bytes(),
+    //     )
+    //     .await
+    //     .unwrap();
+
+    let mut house = HouseController::new(config.house);
 
     // Poll the event loop
     loop {
@@ -28,7 +42,31 @@ pub async fn start_server() -> Result<(), Box<dyn Error>> {
         match &event {
             Ok(v) => {
                 if let Event::Incoming(Incoming::Publish(packet)) = v {
-                    println!("{:?}", packet.topic);
+                    let topic = String::from_utf8(packet.topic.to_vec())?;
+                    let parts: Vec<&str> = topic.split("/").collect::<Vec<&str>>();
+
+                    if parts.len() > 2 {
+                        continue;
+                    }
+
+                    let device = parts[1];
+
+                    info!("Device: {}", device);
+
+                    for room in &mut house.rooms {
+                        if device != room.config.temp_sensor {
+                            continue;
+                        }
+
+                        let payload = String::from_utf8(packet.payload.to_vec())?;
+                        let v: Value = serde_json::from_str(&payload)?;
+
+                        debug!("  - {:?}", v);
+
+                        room.update_temp(v["temperature"].as_f64().unwrap());
+
+                        break;
+                    }
                 };
             }
             Err(e) => {
@@ -37,13 +75,4 @@ pub async fn start_server() -> Result<(), Box<dyn Error>> {
             }
         }
     }
-}
-
-async fn requests(client: AsyncClient) {
-    /*
-     * Used to subscribe to a specific topic ("hello/world") on the MQTT server,
-     * specifying the Quality of Service (QoS) as AtMostOnce, indicating at most
-     * once message delivery.
-     */
-    client.subscribe("#", QoS::AtMostOnce).await.unwrap();
 }

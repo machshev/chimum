@@ -5,12 +5,35 @@ use std::io::{self, BufReader, BufWriter};
 use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct Schedule {}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct RoomConfig {
+    pub name: String,
+    pub temp_sensor: String,
+    pub trv_device: String,
+    pub schedule: Schedule,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct HouseConfig {
+    pub rooms: Vec<RoomConfig>,
+}
+
+impl HouseConfig {
+    pub fn new() -> HouseConfig {
+        HouseConfig { rooms: Vec::new() }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Config {
     pub server: String,
     pub port: u16,
     pub username: String,
     pub password: String,
     pub max_packet_size: u32,
+    pub house: HouseConfig,
 }
 
 impl Config {

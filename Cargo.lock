@@ -101,6 +101,7 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "dirs",
+ "log",
  "pretty_env_logger",
  "rumqttc",
  "serde",
