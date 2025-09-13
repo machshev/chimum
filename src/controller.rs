@@ -1,7 +1,11 @@
 /// Controller for room temperature
+use log::info;
+
+use crate::config::RoomConfig;
 
 #[derive(Debug)]
 pub struct RoomController {
+    pub config: RoomConfig,
     temp: f64,
     setpoint_on: f64,
     setpoint_off: f64,
@@ -17,8 +21,9 @@ impl RoomController {
         };
     }
 
-    pub fn new() -> RoomController {
+    pub fn new(config: RoomConfig) -> RoomController {
         RoomController {
+            config: config,
             temp: 0.0,
             setpoint_on: 0.0,
             setpoint_off: 0.0,
@@ -27,6 +32,7 @@ impl RoomController {
     }
 
     pub fn update_temp(&mut self, temp: f64) {
+        info!("Updating {} temp {}", self.config.name, temp);
         self.temp = temp;
         self.recalculate()
     }
@@ -56,11 +62,22 @@ impl RoomController {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::Schedule;
+
     use super::*;
+
+    fn test_config() -> RoomConfig {
+        RoomConfig {
+            name: "Test".into(),
+            temp_sensor: "Test TH".into(),
+            trv_device: "Test TRV".into(),
+            schedule: Schedule {},
+        }
+    }
 
     #[test]
     fn test_update_setpoint() {
-        let mut controller = RoomController::new();
+        let mut controller = RoomController::new(test_config());
 
         assert_eq!(controller.current_setpoint_on(), 0.0);
         assert_eq!(controller.current_setpoint_off(), 0.0);
@@ -73,7 +90,7 @@ mod tests {
 
     #[test]
     fn test_heat_demand() {
-        let mut controller = RoomController::new();
+        let mut controller = RoomController::new(test_config());
 
         assert_eq!(controller.current_heat_demand(), false, "init no demand");
 

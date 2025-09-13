@@ -1,5 +1,6 @@
 mod config;
 mod controller;
+mod house;
 mod server;
 
 use std::error::Error;
