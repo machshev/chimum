@@ -1,6 +1,7 @@
 mod config;
 mod controller;
 mod house;
+mod schedule;
 mod server;
 
 use std::error::Error;

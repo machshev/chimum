@@ -1,7 +1,17 @@
 /// Controller for room temperature
 use log::info;
 
-use crate::config::RoomConfig;
+use serde::{Deserialize, Serialize};
+
+use crate::schedule::Schedule;
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct RoomConfig {
+    pub name: String,
+    pub temp_sensor: String,
+    pub trv_device: String,
+    pub schedule: Schedule,
+}
 
 #[derive(Debug)]
 pub struct RoomController {
@@ -62,7 +72,7 @@ impl RoomController {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::Schedule;
+    use crate::schedule::Schedule;
 
     use super::*;
 
@@ -71,7 +81,7 @@ mod tests {
             name: "Test".into(),
             temp_sensor: "Test TH".into(),
             trv_device: "Test TRV".into(),
-            schedule: Schedule {},
+            schedule: Schedule::new(),
         }
     }
 
