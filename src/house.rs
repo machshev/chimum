@@ -1,6 +1,17 @@
-use crate::{config::HouseConfig, controller::RoomController};
-
 /// House controller
+use crate::controller::{RoomConfig, RoomController};
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct HouseConfig {
+    pub rooms: Vec<RoomConfig>,
+}
+
+impl HouseConfig {
+    pub fn new() -> HouseConfig {
+        HouseConfig { rooms: Vec::new() }
+    }
+}
 
 #[derive(Debug)]
 pub struct HouseController {
@@ -21,7 +32,9 @@ impl HouseController {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{RoomConfig, Schedule};
+
+    use crate::controller::RoomConfig;
+    use crate::schedule::Schedule;
 
     use super::*;
 
@@ -30,7 +43,9 @@ mod tests {
         let mut house_cfg = HouseConfig::new();
         house_cfg.rooms.push(RoomConfig {
             name: "Test".into(),
-            schedule: Schedule {},
+            temp_sensor: "Test".into(),
+            trv_device: "Test".into(),
+            schedule: Schedule::new(),
         });
         HouseController::new(house_cfg);
     }

@@ -4,27 +4,7 @@ use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter};
 use std::path::PathBuf;
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct Schedule {}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct RoomConfig {
-    pub name: String,
-    pub temp_sensor: String,
-    pub trv_device: String,
-    pub schedule: Schedule,
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct HouseConfig {
-    pub rooms: Vec<RoomConfig>,
-}
-
-impl HouseConfig {
-    pub fn new() -> HouseConfig {
-        HouseConfig { rooms: Vec::new() }
-    }
-}
+use crate::house::HouseConfig;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Config {
@@ -105,6 +85,7 @@ mod tests {
             username: "testuser".to_string(),
             password: "testpass".to_string(),
             max_packet_size: 52342,
+            house: HouseConfig::new(),
         };
 
         // Test saving
