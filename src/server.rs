@@ -74,5 +74,7 @@ pub async fn start_server() -> Result<(), Box<dyn Error>> {
                 return Ok(());
             }
         }
+
+        house.tick();
     }
 }
