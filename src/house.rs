@@ -1,5 +1,6 @@
 /// House controller
 use crate::controller::{RoomConfig, RoomController};
+use log::debug;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -27,6 +28,13 @@ impl HouseController {
         }
 
         HouseController { rooms: rooms }
+    }
+
+    pub fn tick(&mut self) {
+        for room in &mut self.rooms {
+            room.tick();
+            debug!("{}", room);
+        }
     }
 }
 

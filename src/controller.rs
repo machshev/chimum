@@ -1,4 +1,7 @@
+use std::fmt;
+
 /// Controller for room temperature
+use chrono::{Datelike, Local, Timelike};
 use log::info;
 
 use serde::{Deserialize, Serialize};
@@ -22,15 +25,17 @@ pub struct RoomController {
     heat_demand: bool,
 }
 
-impl RoomController {
-    fn recalculate(&mut self) {
-        if self.heat_demand {
-            self.heat_demand = self.temp < self.setpoint_off;
-        } else {
-            self.heat_demand = self.temp < self.setpoint_on;
-        };
+impl fmt::Display for RoomController {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Room({}, [{}|{}]  {}°C -- {})",
+            self.config.name, self.setpoint_on, self.setpoint_off, self.temp, self.heat_demand,
+        )
     }
+}
 
+impl RoomController {
     pub fn new(config: RoomConfig) -> RoomController {
         RoomController {
             config: config,
@@ -39,6 +44,30 @@ impl RoomController {
             setpoint_off: 0.0,
             heat_demand: false,
         }
+    }
+
+    fn recalculate(&mut self) {
+        if self.heat_demand {
+            self.heat_demand = self.temp < self.setpoint_off;
+        } else {
+            self.heat_demand = self.temp < self.setpoint_on;
+        };
+    }
+
+    pub fn tick(&mut self) {
+        let now = Local::now();
+
+        let day = now.weekday().num_days_from_sunday();
+        let hour = now.hour();
+        let min = now.minute();
+
+        let setpoint = self.config.schedule.get_setpoint(
+            day.try_into().unwrap(),
+            hour.try_into().unwrap(),
+            min.try_into().unwrap(),
+        );
+
+        self.update_setpoint(setpoint, 2.0);
     }
 
     pub fn update_temp(&mut self, temp: f64) {
