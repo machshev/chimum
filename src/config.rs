@@ -61,6 +61,8 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
+    use crate::{controller::RoomConfig, schedule::Schedule};
+
     use super::*;
     use tempfile::TempDir;
 
@@ -85,7 +87,15 @@ mod tests {
             username: "testuser".to_string(),
             password: "testpass".to_string(),
             max_packet_size: 52342,
-            house: HouseConfig::new(),
+            house: HouseConfig {
+                rooms: vec![RoomConfig {
+                    name: "Test".into(),
+                    temp_sensor: "Test".into(),
+                    trv_device: "Test".into(),
+                    schedule: Schedule::new(),
+                }],
+                boiler_sw: "boiler".into(),
+            },
         };
 
         // Test saving

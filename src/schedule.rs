@@ -4,14 +4,14 @@ use std::usize;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct Schedule([Vec<(u8, u8, f64)>; 7]);
+pub struct Schedule([Vec<(u8, u8, f32)>; 7]);
 
 impl Schedule {
     pub fn new() -> Schedule {
         Schedule([(); 7].map(|_| Vec::new()))
     }
 
-    pub fn get_setpoint(&self, day: usize, hour: u8, minute: u8) -> f64 {
+    pub fn get_setpoint(&self, day: usize, hour: u8, minute: u8) -> f32 {
         let yesterday: usize = (day + 6) % 7;
         let mut temp = self.0[yesterday].last().unwrap().2;
 

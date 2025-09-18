@@ -4,6 +4,7 @@ use std::fmt;
 use chrono::{Datelike, Local, Timelike};
 use log::info;
 
+use rumqttc::v5::{AsyncClient, mqttbytes::QoS};
 use serde::{Deserialize, Serialize};
 
 use crate::schedule::Schedule;
@@ -18,10 +19,13 @@ pub struct RoomConfig {
 
 #[derive(Debug)]
 pub struct RoomController {
-    pub config: RoomConfig,
-    temp: f64,
-    setpoint_on: f64,
-    setpoint_off: f64,
+    name: String,
+    pub temp_sensor: String,
+    trv_device: String,
+    schedule: Schedule,
+    temp: f32,
+    setpoint_on: f32,
+    setpoint_off: f32,
     heat_demand: bool,
 }
 
@@ -30,7 +34,7 @@ impl fmt::Display for RoomController {
         write!(
             f,
             "Room({}, [{}|{}]  {}°C -- {})",
-            self.config.name, self.setpoint_on, self.setpoint_off, self.temp, self.heat_demand,
+            self.name, self.setpoint_on, self.setpoint_off, self.temp, self.heat_demand,
         )
     }
 }
@@ -38,11 +42,14 @@ impl fmt::Display for RoomController {
 impl RoomController {
     pub fn new(config: RoomConfig) -> RoomController {
         RoomController {
-            config: config,
             temp: 0.0,
             setpoint_on: 0.0,
             setpoint_off: 0.0,
             heat_demand: false,
+            name: config.name,
+            temp_sensor: config.temp_sensor,
+            trv_device: config.trv_device,
+            schedule: config.schedule,
         }
     }
 
@@ -54,43 +61,60 @@ impl RoomController {
         };
     }
 
-    pub fn tick(&mut self) {
+    pub async fn tick(&mut self, client: &AsyncClient) {
         let now = Local::now();
 
         let day = now.weekday().num_days_from_sunday();
         let hour = now.hour();
         let min = now.minute();
 
-        let setpoint = self.config.schedule.get_setpoint(
+        let setpoint = self.schedule.get_setpoint(
             day.try_into().unwrap(),
             hour.try_into().unwrap(),
             min.try_into().unwrap(),
         );
 
         self.update_setpoint(setpoint, 2.0);
+
+        client
+            .publish(
+                format!(
+                    "zigbee2mqtt/{}/set/current_heating_setpoint",
+                    self.trv_device
+                ),
+                QoS::AtLeastOnce,
+                true,
+                if self.heat_demand {
+                    "45".as_bytes()
+                } else {
+                    "5".as_bytes()
+                },
+            )
+            .await
+            .unwrap();
     }
 
-    pub fn update_temp(&mut self, temp: f64) {
-        info!("Updating {} temp {}", self.config.name, temp);
+    pub fn update_temp(&mut self, temp: f32) {
+        info!("Updating {} temp {}", self.name, temp);
         self.temp = temp;
         self.recalculate()
     }
 
-    pub fn current_temp(&self) -> f64 {
+    pub fn current_temp(&self) -> f32 {
         self.temp
     }
 
-    pub fn update_setpoint(&mut self, setpoint: f64, hysteresis: f64) {
+    pub fn update_setpoint(&mut self, setpoint: f32, hysteresis: f32) {
         self.setpoint_on = setpoint - (hysteresis / 2.0);
         self.setpoint_off = setpoint + (hysteresis / 2.0);
         self.recalculate()
     }
 
-    pub fn current_setpoint_on(&self) -> f64 {
+    pub fn current_setpoint_on(&self) -> f32 {
         self.setpoint_on
     }
 
-    pub fn current_setpoint_off(&self) -> f64 {
+    pub fn current_setpoint_off(&self) -> f32 {
         self.setpoint_off
     }
 
