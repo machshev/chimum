@@ -1,17 +1,21 @@
 /// Server
 use crate::config::Config;
 use crate::house::HouseController;
-use log::{debug, info};
+use log::trace;
 use rumqttc::v5::EventLoop;
-use rumqttc::v5::{AsyncClient, Event, Incoming, MqttOptions, mqttbytes::QoS};
+use rumqttc::v5::mqttbytes::QoS;
+use rumqttc::v5::{AsyncClient, Event, Incoming, MqttOptions};
 use serde_json::Value;
 use std::error::Error;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Mutex;
+use tokio::{task, time};
 
 pub struct Server {
-    client: AsyncClient,
+    client: Arc<Mutex<AsyncClient>>,
     eventloop: EventLoop,
-    house: HouseController,
+    house: Arc<Mutex<HouseController>>,
 }
 
 impl Server {
@@ -26,9 +30,9 @@ impl Server {
         let (client, eventloop) = AsyncClient::new(mqttoptions, 10);
 
         Server {
-            client: client,
+            client: Arc::new(Mutex::new(client)),
             eventloop: eventloop,
-            house: HouseController::new(config.house),
+            house: Arc::new(Mutex::new(HouseController::new(config.house))),
         }
     }
 
@@ -37,29 +41,22 @@ impl Server {
         match &event {
             Event::Incoming(Incoming::Publish(packet)) => {
                 let topic = String::from_utf8(packet.topic.to_vec())?;
+                let payload = String::from_utf8(packet.payload.to_vec())?;
                 let parts: Vec<&str> = topic.split("/").collect::<Vec<&str>>();
 
-                if parts.len() > 2 {
+                // Only read status messages, and ignore controller status
+                if parts.len() > 2 || parts[1] == "bridge" {
                     return Ok(());
                 }
 
+                trace!("raw: {:?} = {:?}", topic, payload);
+
                 let device = parts[1];
+                let v: Value = serde_json::from_str(&payload)?;
 
-                info!("Device: {}", device);
-
-                for room in &mut self.house.rooms {
-                    if device != room.temp_sensor {
-                        continue;
-                    }
-
-                    let payload = String::from_utf8(packet.payload.to_vec())?;
-                    let v: Value = serde_json::from_str(&payload)?;
-
-                    debug!("  - {:?}", v);
-
-                    room.update_temp(v["temperature"].as_f32().unwrap());
-
-                    break;
+                {
+                    let mut house = self.house.lock().await;
+                    house.update_sensors(device, &v);
                 }
             }
             _ => {}
@@ -68,20 +65,24 @@ impl Server {
     }
 
     pub async fn start(&mut self) -> Result<(), Box<dyn Error>> {
-        self.client
-            .subscribe("zigbee2mqtt/#", QoS::AtMostOnce)
-            .await
-            .unwrap();
+        {
+            let client = self.client.lock().await;
+            client.subscribe("zigbee2mqtt/#", QoS::AtMostOnce).await?;
+        }
 
-        // client
-        //     .publish(
-        //         "zigbee2mqtt/FRIENDLY_NAME/set/state",
-        //         QoS::AtLeastOnce,
-        //         true,
-        //         "ON".as_bytes(),
-        //     )
-        //     .await
-        //     .unwrap();
+        // Clone Arc for the task
+        let client_task = Arc::clone(&self.client);
+        let house_task = Arc::clone(&self.house);
+
+        task::spawn(async move {
+            loop {
+                let mut house = house_task.lock().await;
+                let client = client_task.lock().await;
+                house.tick(&*client).await;
+
+                time::sleep(Duration::from_secs(5)).await;
+            }
+        });
 
         // Poll the event loop
         loop {
@@ -89,20 +90,17 @@ impl Server {
             let res = self.eventloop.poll().await;
 
             match &res {
-                Ok(event) => {
-                    self.event_handle(event.clone()).await.unwrap();
-                }
+                Ok(event) => match self.event_handle(event.clone()).await {
+                    Err(e) => {
+                        println!("Error = {e:?}");
+                    }
+                    _ => {}
+                },
                 Err(e) => {
                     println!("Error = {e:?}");
                     return Ok(());
                 }
             }
-
-            /*
-            Should be time based - although this works for the moment assuming regular ZigBee
-            messages are coming in.
-            */
-            self.house.tick(&self.client).await;
         }
     }
 }

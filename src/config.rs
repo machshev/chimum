@@ -61,7 +61,7 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
-    use crate::{controller::RoomConfig, schedule::Schedule};
+    use crate::{controller::RoomConfig, schedule::Schedule, sensor::FloatSensorConfig};
 
     use super::*;
     use tempfile::TempDir;
@@ -90,9 +90,13 @@ mod tests {
             house: HouseConfig {
                 rooms: vec![RoomConfig {
                     name: "Test".into(),
-                    temp_sensor: "Test".into(),
+                    temp_sensor: FloatSensorConfig {
+                        device: "Test TH".into(),
+                        field: "temperature".into(),
+                    },
                     trv_device: "Test".into(),
                     schedule: Schedule::new(),
+                    enable: true,
                 }],
                 boiler_sw: "boiler".into(),
             },

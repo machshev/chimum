@@ -2,17 +2,20 @@ use std::fmt;
 
 /// Controller for room temperature
 use chrono::{Datelike, Local, Timelike};
-use log::info;
 
 use rumqttc::v5::{AsyncClient, mqttbytes::QoS};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::schedule::Schedule;
+use crate::sensor::MQTTSensor;
+use crate::sensor::{FloatSensor, FloatSensorConfig};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct RoomConfig {
     pub name: String,
-    pub temp_sensor: String,
+    pub enable: bool,
+    pub temp_sensor: FloatSensorConfig,
     pub trv_device: String,
     pub schedule: Schedule,
 }
@@ -20,13 +23,13 @@ pub struct RoomConfig {
 #[derive(Debug)]
 pub struct RoomController {
     name: String,
-    pub temp_sensor: String,
+    temp_sensor: FloatSensor,
     trv_device: String,
     schedule: Schedule,
-    temp: f32,
     setpoint_on: f32,
     setpoint_off: f32,
     heat_demand: bool,
+    pub enable: bool,
 }
 
 impl fmt::Display for RoomController {
@@ -34,7 +37,11 @@ impl fmt::Display for RoomController {
         write!(
             f,
             "Room({}, [{}|{}]  {}°C -- {})",
-            self.name, self.setpoint_on, self.setpoint_off, self.temp, self.heat_demand,
+            self.name,
+            self.setpoint_on,
+            self.setpoint_off,
+            self.temp_sensor.get_value(),
+            if self.heat_demand { "HEAT" } else { "OFF" },
         )
     }
 }
@@ -42,28 +49,39 @@ impl fmt::Display for RoomController {
 impl RoomController {
     pub fn new(config: RoomConfig) -> RoomController {
         RoomController {
-            temp: 0.0,
             setpoint_on: 0.0,
             setpoint_off: 0.0,
             heat_demand: false,
             name: config.name,
-            temp_sensor: config.temp_sensor,
+            temp_sensor: FloatSensor::new(config.temp_sensor),
             trv_device: config.trv_device,
             schedule: config.schedule,
+            enable: config.enable,
         }
     }
 
+    pub fn update_sensors(&mut self, device: &str, payload: &Value) {
+        if device != self.temp_sensor.device_name() {
+            return;
+        }
+
+        self.temp_sensor.update(payload);
+    }
+
     fn recalculate(&mut self) {
+        if !self.enable {
+            self.heat_demand = false;
+            return;
+        };
+
         if self.heat_demand {
-            self.heat_demand = self.temp < self.setpoint_off;
+            self.heat_demand = self.temp_sensor.get_value() < self.setpoint_off;
         } else {
-            self.heat_demand = self.temp < self.setpoint_on;
+            self.heat_demand = self.temp_sensor.get_value() < self.setpoint_on;
         };
     }
 
-    pub async fn tick(&mut self, client: &AsyncClient) {
-        let now = Local::now();
-
+    fn update_time<T: Datelike + Timelike>(&mut self, now: T) {
         let day = now.weekday().num_days_from_sunday();
         let hour = now.hour();
         let min = now.minute();
@@ -75,8 +93,19 @@ impl RoomController {
         );
 
         self.update_setpoint(setpoint, 2.0);
+    }
 
-        client
+    pub async fn tick(&mut self, client: &AsyncClient) {
+        let now = Local::now();
+
+        self.update_time(now);
+
+        if !self.enable {
+            return;
+        }
+
+        // Only transmit if there is a change
+        let _ = client
             .publish(
                 format!(
                     "zigbee2mqtt/{}/set/current_heating_setpoint",
@@ -90,18 +119,7 @@ impl RoomController {
                     "5".as_bytes()
                 },
             )
-            .await
-            .unwrap();
-    }
-
-    pub fn update_temp(&mut self, temp: f32) {
-        info!("Updating {} temp {}", self.name, temp);
-        self.temp = temp;
-        self.recalculate()
-    }
-
-    pub fn current_temp(&self) -> f32 {
-        self.temp
+            .await;
     }
 
     pub fn update_setpoint(&mut self, setpoint: f32, hysteresis: f32) {
@@ -110,11 +128,13 @@ impl RoomController {
         self.recalculate()
     }
 
-    pub fn current_setpoint_on(&self) -> f32 {
+    #[cfg(test)]
+    fn current_setpoint_on(&self) -> f32 {
         self.setpoint_on
     }
 
-    pub fn current_setpoint_off(&self) -> f32 {
+    #[cfg(test)]
+    fn current_setpoint_off(&self) -> f32 {
         self.setpoint_off
     }
 
@@ -125,6 +145,8 @@ impl RoomController {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::from_str;
+
     use crate::schedule::Schedule;
 
     use super::*;
@@ -132,10 +154,24 @@ mod tests {
     fn test_config() -> RoomConfig {
         RoomConfig {
             name: "Test".into(),
-            temp_sensor: "Test TH".into(),
+            temp_sensor: FloatSensorConfig {
+                device: "Test TH".into(),
+                field: "temperature".into(),
+            },
             trv_device: "Test TRV".into(),
             schedule: Schedule::new(),
+            enable: true,
         }
+    }
+
+    fn test_config_with_schedule(schedule_json: &str) -> RoomConfig {
+        let mut config = test_config();
+
+        let schedule: Schedule = from_str(schedule_json).unwrap();
+
+        config.schedule = schedule;
+
+        config
     }
 
     #[test]
@@ -161,11 +197,13 @@ mod tests {
 
         assert_eq!(controller.current_heat_demand(), true, "heat demand");
 
-        controller.update_temp(20.6);
+        controller.temp_sensor.set_value(20.6);
+        controller.recalculate();
 
         assert_eq!(controller.current_heat_demand(), false, "room heated");
 
-        controller.update_temp(19.5);
+        controller.temp_sensor.set_value(19.5);
+        controller.recalculate();
 
         assert_eq!(
             controller.current_heat_demand(),
@@ -173,8 +211,23 @@ mod tests {
             "temp lowered within range"
         );
 
-        controller.update_temp(19.4);
+        controller.temp_sensor.set_value(19.4);
+        controller.recalculate();
 
         assert_eq!(controller.current_heat_demand(), true, "room reheat");
+    }
+
+    #[test]
+    fn test_schedule() {
+        let schedule_json = r#"
+            [
+                [7, 0, 20.0],
+                [7, 30, 17.0],
+                [17, 30, 18.0],
+                [21, 0, 20.0],
+                [22, 0, 18.0]
+            ]
+        "#;
+        let mut controller = RoomController::new(test_config_with_schedule(schedule_json));
     }
 }

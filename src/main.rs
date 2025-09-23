@@ -2,6 +2,7 @@ mod config;
 mod controller;
 mod house;
 mod schedule;
+mod sensor;
 mod server;
 
 use std::error::Error;
